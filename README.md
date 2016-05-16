@@ -1,2 +1,1 @@
 # sparseEvents
-### Predicting sparse claims
