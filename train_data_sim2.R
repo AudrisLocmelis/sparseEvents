@@ -2,9 +2,6 @@ library(survival)
 library(synthpop)
 library(data.table)
 
-dir = "C:/Users/bruno.opermanis/Desktop/PFA/"
-
-
 ######################## lung cancer data ###################
 
 data = data.table(lung)
@@ -31,7 +28,9 @@ B = 20 #number of time intervals for each person
 X1 = lapply(1:nrow(died),function(k){
   x = died[k] # concrete person
   set.seed(k)
-  Xt = rpois(B,1/110) # simulate B long history of claims
+  count = rpois(1,1/5) # number of claims 
+  Xt = rep(0,B)
+  Xt[sample.int(B,count)] = 1 # simulates B long history of claims
   V = Reduce(rbind,replicate(B,x,simplify=FALSE))
   V[,id:=k]
   V = cbind(V,state = Xt)
@@ -43,7 +42,9 @@ X1 = lapply(1:nrow(died),function(k){
 X0 = lapply(1:nrow(lived),function(k){
   x = lived[k] 
   set.seed(k+nrow(died))
-  Xt = rpois(B,1/1000) # simulate B long history of claims
+  count = rpois(1,1/50) # number of claims 
+  Xt = rep(0,B)
+  Xt[sample.int(B,count)] = 1 # simulates B long history of claims
   V = Reduce(rbind,replicate(B,x,simplify=FALSE))
   V[,id:=k+nrow(died)]
   V = cbind(V,state = Xt)
@@ -62,6 +63,6 @@ data[,1 %in% state,id][,.N,V1] # how many person have made claims
 # unique identifier: id
 # dependent vairble (claims): state
 
-save(data,file = paste0(dir,"data_sim.Rdata"))
+save(data,file = "pfa_data_sim.Rdata")
 
 
