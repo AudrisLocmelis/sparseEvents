@@ -1,8 +1,13 @@
-library(shiny)
-library(MASS)
-library(data.table)
-library(ggplot2)
-library(ROSE)
+
+source("common/ipak.R")
+packages <- c("shiny", "MASS", "data.table", "ggplot2", "ROSE")
+ipak(packages)
+
+# library(shiny)
+# library(MASS)
+# library(data.table)
+# library(ggplot2)
+# library(ROSE)
 
 load("pfa_data_sim.Rdata")
 #data[,(names(data)):=lapply(names(data),function(v) ifelse(class(get(v))=="numeric",as.integer(get(v)),get(v)) )]
