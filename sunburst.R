@@ -9,8 +9,9 @@ devtools::install_github("timelyportfolio/sunburstR")
 # library(shiny)
 # library(sunburstR)
 
-if (!require("rPython")) install.packages("rPython")
-install.packages("http://genome.crg.es/~didac/ggsunburst/ggsunburst_0.0.5.tar.gz", repos=NULL, type="source")
+# ### rPython not available on Windows
+# if (!require("rPython")) install.packages("rPython")
+# install.packages("http://genome.crg.es/~didac/ggsunburst/ggsunburst_0.0.5.tar.gz", repos=NULL, type="source")
 
 
 sequences <- read.csv(
