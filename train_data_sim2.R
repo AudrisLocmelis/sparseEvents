@@ -1,6 +1,10 @@
-library(survival)
-library(synthpop)
-library(data.table)
+
+source("common/ipak.R")
+packages <- c("survival", "synthpop", "data.table")
+ipak(packages)
+# library(survival)
+# library(synthpop)
+# library(data.table)
 
 ######################## lung cancer data ###################
 
