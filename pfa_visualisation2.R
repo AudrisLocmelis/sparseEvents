@@ -1,6 +1,6 @@
 
 source("common/ipak.R")
-packages <- c("shiny", "MASS", "data.table", "ggplot2", "ROSE")
+packages <- c("shiny", "MASS", "data.table", "ggplot2", "ROSE", "gridExtra")
 ipak(packages)
 
 # library(shiny)
@@ -28,7 +28,8 @@ data = data.table(data,claims = claims[,V1])
 X = copy(data)
 X2 <- data.table(ROSE(claims~., data=data, seed=3,p = 0.5,N = data[,.N]*2)$data)
 X2[,age:=round(age)]
-
+X2[,claims:=ifelse(claims==1,"claimed","no claims")]
+X2[,.N,claims]
 
 
 #get_plot = function(X,nam){
@@ -60,12 +61,15 @@ get_plot = function(X,nam){
   
   X3 = copy(X)
 
-  #korigjeju faktorus
+  #factors to characters
   if(class(X3[,get(nam)])=="factor") X3[,(nam):=as.character(get(nam))]
   
-  if(nam=="age") X3[,age:=cut(age,breaks = seq(0,110,by=5))]
+  #creating age groups
+  if(nam=="age") X3[,age:=cut(age,
+                              breaks = seq(0,110,by=5), 
+                              right = FALSE)]
   
-  #samazinu skailtisko mainiigo daudzumu
+  #creating groups for numerical variables
   if(class(X3[,get(nam)]) %in% c("numeric","integer") & X3[,uniqueN(get(nam))]>10){
     r = X3[,range(get(nam))]
     X3[,(nam):=cut(get(nam),breaks = seq(r[1]-0.01,r[2],length = 11))]
@@ -73,7 +77,9 @@ get_plot = function(X,nam){
   
   X1 = X3[,sum(claims)/.N,get(nam)][order(get)]
   g = ggplot(X1, aes(x = factor(get)))
-  g + geom_bar(aes(weight = V1)) + ylab("procent") + xlab(nam)
+  plot = g + geom_bar(aes(weight = V1)) + ylab("% claims") + xlab(nam)
+  grid.arrange(plot, bottom = "Percentage of lung cancer claims within each group.")
+  
 }
 
 
@@ -81,13 +87,14 @@ plot_density = function(X,nam){
   
   X1 = copy(X)
   X1[,claims:=ifelse(claims==1,"claimed","no claims")]
-  X2[,claims:=ifelse(claims==1,"claimed","no claims")]
   if(class(X1[,get(nam)]) %in% c("integer","numeric") ){
-    ex = paste0("ggplot(X1, aes(",nam,")) + geom_density(aes(group=claims,color=claims,fill = claims), alpha=0.3)")
-    eval(parse(text=ex))
+    ex = paste0("ggplot(X1, aes(",nam,")) + geom_density(aes(group=claims,color=claims,fill = claims), alpha=0.3) + theme(legend.position = 'bottom')")
+    plot = eval(parse(text=ex))
+    grid.arrange(plot, bottom = "Comparison of distributions for [claimed / not claimed] customers.")
   }else{
-    ex= paste0("ggplot(X2, aes(claims, ..count..)) + geom_bar(aes(fill = ",nam,"), position = 'dodge')")
-    eval(parse(text=ex))
+    ex= paste0("ggplot(X2, aes(",nam,", ..count..)) + geom_bar(aes(fill = claims), position = 'dodge') + theme(legend.position = 'bottom')")
+    plot = eval(parse(text=ex))
+    grid.arrange(plot, bottom = "Comparison of distributions for [claimed / not claimed] customers.")
   }
 }
 
@@ -131,7 +138,7 @@ do_tests(X,"sex")
 
 
 
-######## uztaisu tabulu ar visaam p-veertiibaam #####
+######## creates a table with all p-values #####
 
 ptab = data.table(vars = x,pval = sapply(x,function(v) do_tests(X,v)[[1]][2]) )[order(pval)]
 rownames(ptab) = NULL
@@ -160,22 +167,55 @@ server = function(input, output, session) {
 vec = x
 names(vec) = x
 
+# ui = fluidPage(
+#   
+#   titlePanel("Lung Cancer Claim Descriptive Overview"),
+#   
+#   
+#   sidebarLayout(
+#     sidebarPanel(
+#       selectInput("variable", "Variable:",vec),
+#       strong("Mean (location) equallty tests"),
+#       "comparing claim / no claim",
+#       tableOutput("test"),
+#       tableOutput("ptab")
+#     ),
+#     mainPanel(
+#       
+#       plotOutput("graf"),
+#       plotOutput("density")
+#     )
+#   )
+# )
+
 ui = fluidPage(
   
-  titlePanel("Descriptive modeling/marginal tests"),
+  titlePanel("Lung Cancer Claim Descriptive Overview"),
+  br(),
   
-  
-  sidebarLayout(
-    sidebarPanel(
+  fluidRow(
+    column(4,
       selectInput("variable", "Variable:",vec),
+      br(),
+      
+      strong("Mean (location) equallty tests"),
+      br(),
+      "comparing claim / no claim",
+      tableOutput("test"),
+      br(),
+      # Kruskal-Wallis Test
+      strong("Ordered p-values"),
+      br(),
+      "of Kruskal-Wallis / Chi-squared tests for all variables",
       tableOutput("ptab")
     ),
-    mainPanel(
-      
+    
+    column(8,
       plotOutput("graf"),
-      plotOutput("density"),
-      tableOutput("test")
+      br(),
+      plotOutput("density")
     )
   )
 )
+
 shinyApp(ui, server)
