@@ -1,0 +1,9 @@
+name: sample_app
+account: alocmelis
+server: shinyapps.io
+appId: 103042
+bundleId: 457509
+url: https://alocmelis.shinyapps.io/sample_app/
+when: 1463745914.28219
+asMultiple: FALSE
+asStatic: FALSE

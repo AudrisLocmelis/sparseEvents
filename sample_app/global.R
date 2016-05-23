@@ -1,0 +1,308 @@
+
+# source("../common/ipak.R")
+ipak <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg)) 
+    install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE)
+}
+
+# packages <- c("survival", "synthpop", "data.table")
+# ipak(packages)
+# library("survival", "synthpop", "data.table")
+library(survival)
+library(synthpop)
+library(data.table)
+
+######################## lung cancer data ###################
+
+data = data.table(lung)
+data[,inst:=NULL]
+data[,time:=NULL]
+
+data[,(names(data)):=lapply(names(data),function(v) ifelse(is.na(get(v)),0,get(v)) )]
+data[,delta:=status-1] #variable : 0 - lived, 1 - died
+data[,status:=NULL]
+
+###### dividing data into people that died and lived till the end
+lived = data[delta==0]
+died = data[delta==1]
+lived[,delta:=NULL]
+died[,delta:=NULL]
+lived = data.table(Reduce(rbind,syn(lived,m = 4)$syn)) # simulates "healthy people" data m times more
+#X1 = data.table(Reduce(rbind,syn(X1,m = 1)$syn))
+
+
+
+B = 20 #number of time intervals for each person
+
+### "sick people"
+X1 = lapply(1:nrow(died),function(k){
+  x = died[k] # concrete person
+  set.seed(k)
+  count = rpois(1,1/5) # number of claims 
+  Xt = rep(0,B)
+  Xt[sample.int(B,count)] = 1 # simulates B long history of claims
+  V = Reduce(rbind,replicate(B,x,simplify=FALSE))
+  V[,id:=k]
+  V = cbind(V,state = Xt)
+  return(V)
+})
+
+
+### "healthy people"
+X0 = lapply(1:nrow(lived),function(k){
+  x = lived[k] 
+  set.seed(k+nrow(died))
+  count = rpois(1,1/50) # number of claims 
+  Xt = rep(0,B)
+  Xt[sample.int(B,count)] = 1 # simulates B long history of claims
+  V = Reduce(rbind,replicate(B,x,simplify=FALSE))
+  V[,id:=k+nrow(died)]
+  V = cbind(V,state = Xt)
+  return(V)
+})
+
+
+data = rbindlist(c(X1,X0))
+dim(data)
+
+data[,.N,state] # total claims
+data[,1 %in% state,id][,.N,V1] # how many person have made claims
+
+##### OUTPUT data specification
+# regressors: age sex ph.ecog ph.karno pat.karno meal.cal wt.loss 
+# unique identifier: id
+# dependent vairble (claims): state
+
+# save(data,file = "pfa_data_sim.Rdata")
+# View(data)
+# class(data)
+
+
+
+
+# source("../common/ipak.R")
+# packages <- c("shiny", "MASS", "data.table", "ggplot2", "ROSE", "gridExtra")
+# ipak(packages)
+# library("shiny", "MASS", "data.table", "ggplot2", "ROSE", "gridExtra")
+library(shiny)
+library(MASS)
+library(data.table)
+library(ggplot2)
+library(ROSE)
+library(gridExtra)
+
+# source("train_data_sim2.R")
+
+# load("pfa_data_sim.Rdata")
+#data[,(names(data)):=lapply(names(data),function(v) ifelse(class(get(v))=="numeric",as.integer(get(v)),get(v)) )]
+x = names(data)
+x = x[! x %in% c("id","state")]
+
+claims = data[,as.integer(1 %in% state),id]
+data = unique(data[,c(x,"id"),with=FALSE],by="id")
+data = data.table(data,claims = claims[,V1])
+
+
+
+# generating data according to ROSE: p=0.5 as default
+#X <- data.table(ROSE(claims~., data=data, seed=3,p = 0.5,N = data[,.N]*2)$data)
+#X[,age:=round(age)]
+#data[,.N,claims]
+#X[,.N,claims]
+X = copy(data)
+X2 <- data.table(ROSE(claims~., data=data, seed=3,p = 0.5,N = data[,.N]*2)$data)
+X2[,age:=round(age)]
+X2[,claims:=ifelse(claims==1,"claimed","no claims")]
+X2[,.N,claims]
+
+
+#get_plot = function(X,nam){
+#  X1 = copy(X[,c(nam,"claims"),with=FALSE])
+#  X1[,claims:=as.character(claims)]
+#  if( class(X1[,nam,with=FALSE][[1]]) %in% c("numeric","integer") ){
+#    ex = paste0("p <- ggplot(X, aes(factor(claims),",nam,"))")
+#    eval(parse(text=ex))
+#    p+geom_boxplot()
+#  }else{
+#    ex = paste0("ggplot(X, aes(claims, ..count..)) + geom_bar(aes(fill = ",nam,"), position = 'stack')")#, position = "dodge")
+#    eval(parse(text=ex))
+#  }
+#}
+
+#get_plot = function(X,nam){
+#  V1 = X[,.N,list(get(nam),claims)]
+#  setnames(V1,"get",nam)
+#  V1[,claims:=ifelse(claims==1,"claimed","no claim")]
+#  
+#  ex = paste0("ggplot(V1,aes(x = ",nam,", y = N,fill = claims)) + 
+#                geom_bar(position = 'fill',stat = 'identity') + 
+#                scale_y_continuous(labels = percent_format())")
+#  eval(parse(text=ex))
+#}
+
+get_plot = function(X,nam){
+  #nam = "age"
+  
+  X3 = copy(X)
+  
+  #factors to characters
+  if(class(X3[,get(nam)])=="factor") X3[,(nam):=as.character(get(nam))]
+  
+  #creating age groups
+  if(nam=="age") X3[,age:=cut(age,
+                              breaks = seq(0,110,by=5), 
+                              right = FALSE)]
+  
+  #creating groups for numerical variables
+  if(class(X3[,get(nam)]) %in% c("numeric","integer") & X3[,uniqueN(get(nam))]>10){
+    r = X3[,range(get(nam))]
+    X3[,(nam):=cut(get(nam),breaks = seq(r[1]-0.01,r[2],length = 11))]
+  }
+  
+  X1 = X3[,sum(claims)/.N,get(nam)][order(get)]
+  g = ggplot(X1, aes(x = factor(get)))
+  plot = g + geom_bar(aes(weight = V1)) + ylab("% claims") + xlab(nam)
+  grid.arrange(plot, bottom = "Percentage of lung cancer claims within each group.")
+  
+}
+
+
+plot_density = function(X,nam){
+  
+  X1 = copy(X)
+  X1[,claims:=ifelse(claims==1,"claimed","no claims")]
+  if(class(X1[,get(nam)]) %in% c("integer","numeric") ){
+    ex = paste0("ggplot(X1, aes(",nam,")) + geom_density(aes(group=claims,color=claims,fill = claims), alpha=0.3) + theme(legend.position = 'bottom')")
+    plot = eval(parse(text=ex))
+    grid.arrange(plot, bottom = "Comparison of distributions for [claimed / not claimed] customers.")
+  }else{
+    ex= paste0("ggplot(X2, aes(",nam,", ..count..)) + geom_bar(aes(fill = claims), position = 'dodge') + theme(legend.position = 'bottom')")
+    plot = eval(parse(text=ex))
+    grid.arrange(plot, bottom = "Comparison of distributions for [claimed / not claimed] customers.")
+  }
+}
+
+
+#get_plot(X,"age")
+
+
+## 
+do_tests = function(X,nam){
+  
+  if(class(X[,get(nam)]) %in% c("integer","numeric")){
+    ## Kruskal Wallis test
+    test = kruskal.test(X[,get(nam)],X[,claims])
+    vec1 = round(c(test$statistic,test$p.value),3)
+    
+    ## classical anova
+    ff = paste0(nam," ~ claims")
+    test = anova(lm(formula(ff),data = X))
+    vec2 = round(c(test$`F value`[1],test$`Pr(>F)`[1]),3)
+    
+    
+    out = data.table(KW_test = vec1,ANOVA_test = vec2)
+  }else{
+    #Chi two sample homogeneity test (?)
+    X1 = X[,c("claims",nam),with=FALSE]
+    X0 = X1[claims==0,.N,get(nam)]
+    X1 = X1[claims==1,.N,get(nam)]
+    X0 = merge(X0,X1,by="get",all=TRUE)
+    X0[is.na(N.x),N.x:=0]
+    X0[is.na(N.y),N.y:=0]
+    
+    test = chisq.test(X0[[2]],X0[[3]]) #, simulate.p.value = TRUE, B = 1000)
+    vec1 = c(test$statistic,test$p.value)
+    out = data.table(Chi_test = vec1)
+  }
+  rownames(out) = c("statistic","p-value")
+  return(out)
+}
+do_tests(X,"age")
+do_tests(X,"sex")
+
+
+
+######## creates a table with all p-values #####
+
+ptab = data.table(vars = x,pval = sapply(x,function(v) do_tests(X,v)[[1]][2]) )[order(pval)]
+rownames(ptab) = NULL
+
+
+
+############## SHINY part ########################
+
+x_num = x[sapply(x,function(v) X[,class(get(v))] %in% c("numeric","integer"))]
+x_cat = x[sapply(x,function(v) ! X[,class(get(v))] %in% c("numeric","integer"))]
+
+
+# server = function(input, output, session) {
+# 
+#   #lapply(x, function(v) {
+#   #  output[[paste0('graf_', v)]] <- renderPlot({
+#   #    get_plot(X,v)
+#   #  })
+#   #})
+#   output$ptab = renderTable({ptab})
+#   output$test = renderTable({do_tests(X,input$variable)})
+#   output$graf = renderPlot({get_plot(X,input$variable)})
+#   output$density = renderPlot({plot_density(X,input$variable)})
+# }
+
+vec = x
+names(vec) = x
+
+# ui = fluidPage(
+#   
+#   titlePanel("Lung Cancer Claim Descriptive Overview"),
+#   
+#   
+#   sidebarLayout(
+#     sidebarPanel(
+#       selectInput("variable", "Variable:",vec),
+#       strong("Mean (location) equallty tests"),
+#       "comparing claim / no claim",
+#       tableOutput("test"),
+#       tableOutput("ptab")
+#     ),
+#     mainPanel(
+#       
+#       plotOutput("graf"),
+#       plotOutput("density")
+#     )
+#   )
+# )
+
+# ui = fluidPage(
+#   
+#   titlePanel("Lung Cancer Claim Descriptive Overview"),
+#   br(),
+#   
+#   fluidRow(
+#     column(4,
+#       selectInput("variable", "Variable:",vec),
+#       br(),
+#       
+#       strong("Mean (location) equallty tests"),
+#       br(),
+#       "comparing claim / no claim",
+#       tableOutput("test"),
+#       br(),
+#       # Kruskal-Wallis Test
+#       strong("Ordered p-values"),
+#       br(),
+#       "of Kruskal-Wallis / Chi-squared tests for all variables",
+#       tableOutput("ptab")
+#     ),
+#     
+#     column(8,
+#       plotOutput("graf"),
+#       br(),
+#       plotOutput("density")
+#     )
+#   )
+# )
+
+# shinyApp(ui, server)
+
